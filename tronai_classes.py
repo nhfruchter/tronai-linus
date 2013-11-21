@@ -1,3 +1,5 @@
+import resource, math, random
+
 class AIBase(object):
     """A base class for all Tron AIs that implements a lot of standard features.
     To create your own AI, simply implement the play() function, which returns a direction.
@@ -33,11 +35,16 @@ class AIBase(object):
     def findToken(self, token=None):
         """Finds the x,y location of a given token on the board. Defaults to player."""
         token = token or self.PLAYER # instance methods don't like defaults
+        oldPos = None
         for x in xrange(len(self.board)):
             for y in xrange(len(self.board[0])):
                 if self.board[x][y] == token:
                     oldPos = (x, y)
         return oldPos    
+        
+    def vsum(self, a, b):
+        # SO MUCH PYTHON
+        return map(sum, zip(a, b)) 
         
     def findLegal(self):
         """Gets all legal moves from current state."""
@@ -45,7 +52,7 @@ class AIBase(object):
         possibleDirections = []
         for dirLetter, vector in self.VECTOR_MAP.iteritems():
             # Calculate your new x and y coordinates
-            newx, newy = map(sum, zip(self.playerPos, vector)) #THANKS 112
+            newx, newy = self.vsum(self.playerPos, vector) 
             # And check to see if the target square is empty.
             if self.board[newx][newy] == self.EMPTY:
                 possibleDirections.append(dirLetter)
@@ -54,7 +61,6 @@ class AIBase(object):
     def play(self):
         raise Exception("I didn't read the instructions.")
         
-# Here is an AI which chooses a random legal move every turn.
 
 class RandomMover(AIBase):
     def __init__(self, board):
@@ -82,7 +88,54 @@ class Human(AIBase):
     
     def play(self):
         return raw_input("w, a, s, or d? > ")
+
+
+class AIOne(AIBase):
+    def __init__(self, board):
+        super(AIOne, self).__init__(board)
+        self.timeForRandom = random.randint(1, 5)
+        
+    def update(self):
+        """Runs every time the game state updates and changes 
+        the AI's internal state to reflect the new game state."""
+        self.playerPos = self.findToken(self.PLAYER)
+        self.opponentPos = self.findToken(self.OPPONENT)
+        self.findLegal()
+
+    def distance(self, a, b):
+        x0, y0, x1, y1 = tuple(a) + tuple(b)
+        return math.sqrt((x1-x0)**2 + (y1-y0)**2)
+        
+    def randomMove(self):
+        if len(self.legal) != 0:
+            return random.choice(self.legal)
+        else:
+            return "w"   
+        
+    def play(self):    
+        self.update()
+        if self.opponentPos == None and self.legal != []:
+            return random.choice(self.legal)
+        dists = {}
+        for move in self.legal:
+            d = self.distance(self.vsum(self.playerPos, self.vectorize(move)), self.opponentPos)
+            dists[d] = move
             
+        if dists != {}:
+            maximizeDistance = dists[max(dists)]
+        else:
+            return "w"
+                
+        sysinfo = resource.getrusage(resource.RUSAGE_SELF)
+        
+        if sysinfo.ru_utime >= self.timeForRandom:
+            return self.randomMove()
+        else:    
+            weight = math.floor((1 - 1/(self.timeForRandom - sysinfo.ru_utime))*100)                
+            if 0 <= weight <= random.randint(0, 100):
+                return self.randomMove()
+            else:
+                return maximizeDistance    
 
 #############################
 #
@@ -207,7 +260,6 @@ class Board(object):
 def inputMove(B, P, AI):
     # Send new board into AI
     AI.board = B.outputForAI(P)
-    print "playing", AI
     # And tell AI to process it and grab move
     move = AI.play()    
     # And then move the AI's board back to the global one
@@ -274,7 +326,7 @@ def playGame(B, AIDict):
     canvas = Canvas(root, width=B.X*30, height=B.Y*30)
     canvas.pack()
     init(B.board)
-    canvas.after(5000, makeMove)
+    canvas.after(2000, makeMove)
     print "hello"
     global scores
     scores = [0]*(len(B.players)+1)
